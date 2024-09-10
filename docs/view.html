@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>D3.js Chart with Auto-Scroll and Forecasts</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+        }
+        #chart {
+            width: 100%;
+            height: 400px;
+        }
+        #slider {
+            width: 800px;
+            margin: 80px 40px;
+        }
+        #autoScrollButton {
+            margin-left: 40px;
+            padding: 10px 20px;
+            font-size: 16px;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+    <h1>Pendulum <span style="color: blue;">readings</span> and <span style="color: orange;">forecasts</span></h1>
+    <p><em>Scrub to the right to see forecasts or tap Auto-Scroll to animate. Forecasts every 1,024 data points.</em></p>
+    <p>&nbsp;</p>
+    <div id="chart"></div>
+    <input type="range" id="slider" min="0" max="100" value="0">
+    <p>
+    <button id="autoScrollButton">Auto-Scroll</button>
+    </p>
+
+    <script type="module">
+        import { readings } from './data/readings.js';
+        import { forecasts } from './data/forecasts.js';
+
+        const config = {
+            visibleDataPoints: 250,
+            margin: { top: 20, right: 20, bottom: 30, left: 50 },
+            width: 800,
+            height: 400
+        };
+
+        const svg = d3.select("#chart")
+            .append("svg")
+            .attr("width", config.width + config.margin.left + config.margin.right)
+            .attr("height", config.height + config.margin.top + config.margin.bottom)
+            .append("g")
+            .attr("transform", `translate(${config.margin.left},${config.margin.top})`);
+
+        const x = d3.scaleLinear().range([0, config.width]);
+        const y = d3.scaleLinear().range([config.height, 0]);
+
+        const line = d3.line()
+            .x(d => x(d[0]))
+            .y(d => y(d[1]));
+
+        x.domain(d3.extent([...readings, ...forecasts], d => d[0]));
+        y.domain([0, 1]);
+
+        svg.append("g")
+            .attr("class", "x-axis")
+            .attr("transform", `translate(0,${config.height})`)
+            .call(d3.axisBottom(x));
+
+        svg.append("g")
+            .call(d3.axisLeft(y));
+
+        const readingsPath = svg.append("path")
+            .attr("class", "readings-line")
+            .attr("fill", "none")
+            .attr("stroke", "steelblue")
+            .attr("stroke-width", 2);
+
+        const forecastsGroup = svg.append("g")
+            .attr("class", "forecasts-group");
+
+        const slider = document.getElementById("slider");
+        slider.max = readings.length - config.visibleDataPoints;
+
+        function updateChart() {
+            const start = parseInt(slider.value);
+            const end = start + config.visibleDataPoints;
+            const visibleReadings = readings.slice(start, end);
+
+            x.domain(d3.extent(visibleReadings, d => d[0]));
+            svg.select(".x-axis").call(d3.axisBottom(x));
+
+            // Only display readings up to halfway along the visible graph
+            const midPoint = x(visibleReadings[Math.floor(visibleReadings.length / 2)][0]);
+            const clippedLine = d3.line()
+                .x(d => x(d[0]))
+                .y(d => y(d[1]))
+                .defined((d, i) => x(d[0]) <= midPoint);
+
+            readingsPath.datum(visibleReadings).attr("d", clippedLine);
+
+            // Filter and draw forecasts
+            const visibleForecasts = forecasts.filter(d => d[0] >= x.domain()[0] && d[0] <= x.domain()[1]);
+            
+            forecastsGroup.selectAll(".forecast-line").remove();
+            
+            let currentLine = [];
+            visibleForecasts.forEach((forecast, i) => {
+                currentLine.push(forecast);
+                if (i === visibleForecasts.length - 1 || visibleForecasts[i+1][0] - forecast[0] > 1) {
+                    forecastsGroup.append("path")
+                        .attr("class", "forecast-line")
+                        .datum(currentLine)
+                        .attr("fill", "none")
+                        .attr("stroke", "orange")
+                        .attr("stroke-width", 3)
+                        .attr("d", line);
+                    currentLine = [];
+                }
+            });
+        }
+
+        slider.addEventListener("input", updateChart);
+
+        // Auto-scroll functionality
+        const autoScrollButton = document.getElementById("autoScrollButton");
+        let autoScrollInterval;
+
+        function autoScroll() {
+            if (parseInt(slider.value) < parseInt(slider.max)) {
+                slider.value = parseInt(slider.value) + 1;
+                updateChart();
+            } else {
+                clearInterval(autoScrollInterval);
+                autoScrollButton.textContent = "Auto-Scroll";
+            }
+        }
+
+        autoScrollButton.addEventListener("click", () => {
+            if (autoScrollInterval) {
+                clearInterval(autoScrollInterval);
+                autoScrollButton.textContent = "Auto-Scroll";
+                autoScrollInterval = null;
+            } else {
+                autoScrollInterval = setInterval(autoScroll, 15);  // Adjust speed here
+                autoScrollButton.textContent = "Stop";
+            }
+        });
+
+        // Initial update
+        updateChart();
+    </script>
+</body>
+</html>
